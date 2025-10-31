@@ -147,14 +147,23 @@ jobs:
           PY
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.VERSION }}
-          name: ${{ env.VERSION }}
-          body: ${{ steps.changelog.outputs.notes }}
-          files: |
-            release-assets/ephetzner-linux-x86_64/*
-            release-assets/ephetzner-windows-x86_64/*
-            release-assets/source/*
-            release-assets/SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ env.VERSION }}
+        run: |
+          set -e
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release delete "$VERSION" -y
+          fi
+          mapfile -t linux_files < <(find release-assets/ephetzner-linux-x86_64 -type f -print | sort)
+          mapfile -t windows_files < <(find release-assets/ephetzner-windows-x86_64 -type f -print | sort)
+          mapfile -t source_files < <(find release-assets/source -type f -print | sort)
+
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file release-assets/CHANGELOG.md \
+            "${linux_files[@]}" \
+            "${windows_files[@]}" \
+            "${source_files[@]}" \
+            release-assets/SHA256SUMS \
             release-assets/CHANGELOG.md
