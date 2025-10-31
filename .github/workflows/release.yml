@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  VERSION: ${{ github.ref_name }}
+
+jobs:
+  build:
+    name: Build binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+          - os: windows-latest
+            target: windows-x86_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: latest
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run python -m unittest discover -s tests
+
+      - name: Build binary
+        run: uv run pyinstaller --onefile --name ephetzner main.py
+
+      - name: Prepare artifacts
+        env:
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          uv run python - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import shutil
+
+          version = os.environ['VERSION']
+          target = os.environ['TARGET']
+          dist = pathlib.Path('dist')
+          out = pathlib.Path('build-artifacts')
+          out.mkdir(exist_ok=True)
+
+          binaries = [f for f in dist.iterdir() if f.is_file()]
+          if not binaries:
+              raise SystemExit('No binaries produced by PyInstaller')
+          binary = binaries[0]
+          suffix = binary.suffix
+          dest_name = f"ephetzner-{version}-{target}{suffix}"
+          dest = out / dest_name
+          shutil.copy2(binary, dest)
+
+          digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+          with (out / 'SHA256SUMS').open('w', encoding='utf-8') as handle:
+              handle.write(f"{digest}  {dest.name}\n")
+          PY
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ephetzner-${{ matrix.target }}
+          path: build-artifacts
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Generate source archive
+        run: |
+          mkdir -p release-assets/source
+          git archive --format=zip --output release-assets/source/ephetzner-${VERSION}-src.zip HEAD
+
+      - name: Combine checksums
+        run: |
+          set -e
+          cd release-assets
+          find . -name 'SHA256SUMS' -type f -print0 | xargs -0 cat > SHA256SUMS
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          set -e
+          PREV_TAG=$(git describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            git log --pretty=format:'- %s' > release-assets/CHANGELOG.md
+          else
+            git log --pretty=format:'- %s' "${PREV_TAG}..${VERSION}" > release-assets/CHANGELOG.md
+          fi
+          {
+            echo "notes<<'EOF'"
+            cat release-assets/CHANGELOG.md
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: ${{ env.VERSION }}
+          body: ${{ steps.changelog.outputs.notes }}
+          files: |
+            release-assets/ephetzner-linux-x86_64/*
+            release-assets/ephetzner-windows-x86_64/*
+            release-assets/source/*
+            release-assets/SHA256SUMS
+            release-assets/CHANGELOG.md
