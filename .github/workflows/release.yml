@@ -102,7 +102,19 @@ jobs:
         run: |
           set -e
           cd release-assets
-          find . -name 'SHA256SUMS' -type f -print0 | xargs -0 cat > SHA256SUMS
+          python - <<'PY'
+          import pathlib
+
+          root = pathlib.Path('.')
+          combined = root / 'SHA256SUMS'
+          sources = sorted(p for p in root.rglob('SHA256SUMS') if p.is_file())
+
+          with combined.open('w', encoding='utf-8') as handle:
+            for path in sources:
+              if path == combined:
+                continue
+              handle.write(path.read_text(encoding='utf-8'))
+          PY
 
       - name: Generate changelog
         id: changelog
