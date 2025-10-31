@@ -127,11 +127,21 @@ jobs:
           else
             git log --pretty=format:'- %s' "${PREV_TAG}..${VERSION}" > release-assets/CHANGELOG.md
           fi
-          {
-            echo "notes<<EOF"
-            cat release-assets/CHANGELOG.md
-            echo EOF
-          } >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          notes_path = Path('release-assets/CHANGELOG.md')
+          notes = notes_path.read_text(encoding='utf-8')
+          output_path = Path(os.environ['GITHUB_OUTPUT'])
+
+          with output_path.open('a', encoding='utf-8') as handle:
+              handle.write('notes<<EOF\n')
+              handle.write(notes)
+              if not notes.endswith('\n'):
+                  handle.write('\n')
+              handle.write('EOF\n')
+          PY
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
