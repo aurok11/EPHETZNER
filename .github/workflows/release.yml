@@ -128,9 +128,9 @@ jobs:
             git log --pretty=format:'- %s' "${PREV_TAG}..${VERSION}" > release-assets/CHANGELOG.md
           fi
           {
-            echo "notes<<'EOF'"
+            echo "notes<<EOF"
             cat release-assets/CHANGELOG.md
-            echo 'EOF'
+            echo EOF
           } >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
