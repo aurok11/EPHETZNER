@@ -6,7 +6,7 @@ flow in a single interactive experience.
 
 ### Prerequisites
 
-- Python 3.13+ (managed with [`uv`](https://github.com/astral-sh/uv))
+- Python 3.14+ (managed with [`uv`](https://github.com/astral-sh/uv))
 - Hetzner Cloud API token
 - Optional: DuckDNS token, S3-compatible credentials for backups
 
