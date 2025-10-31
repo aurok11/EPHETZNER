@@ -31,6 +31,7 @@ def _iter_config_fields(config: "AppConfig"):
     mapping = (
         ("Hetzner API token", config.hetzner_api_token, True),
         ("DuckDNS token", config.duckdns_token, True),
+        ("DuckDNS subdomena", config.duckdns_subdomain, False),
         ("S3 endpoint", config.s3_endpoint, False),
         ("S3 access key", config.s3_access_key, True),
         ("S3 secret key", config.s3_secret_key, True),

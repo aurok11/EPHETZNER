@@ -48,6 +48,7 @@ class _ConfigField:
 _FIELDS: tuple[_ConfigField, ...] = (
     _ConfigField("hetzner_api_token", "Hetzner API token", secret=True, optional=False),
     _ConfigField("duckdns_token", "DuckDNS token", secret=True),
+    _ConfigField("duckdns_subdomain", "Domyślna subdomena DuckDNS", secret=False),
     _ConfigField("s3_endpoint", "S3 endpoint URL", secret=False),
     _ConfigField("s3_access_key", "S3 access key", secret=True),
     _ConfigField("s3_secret_key", "S3 secret key", secret=True),

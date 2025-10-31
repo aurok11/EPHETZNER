@@ -18,6 +18,7 @@ class AppConfigIniTests(unittest.TestCase):
                     """
                     [ephetzner]
                     s3_endpoint = https://objects.example
+                    duckdns_subdomain = lab42
 
                     [ephetzner.secrets]
                     hetzner_api_token = hetzner-secret
@@ -32,6 +33,7 @@ class AppConfigIniTests(unittest.TestCase):
 
             self.assertEqual("hetzner-secret", config.hetzner_api_token)
             self.assertEqual("duck-secret", config.duckdns_token)
+            self.assertEqual("lab42", config.duckdns_subdomain)
             self.assertEqual("https://objects.example", config.s3_endpoint)
             self.assertIsNone(config.s3_access_key)
             self.assertIsNone(config.s3_secret_key)
@@ -59,6 +61,7 @@ class AppConfigIniTests(unittest.TestCase):
         config = AppConfig(
             hetzner_api_token="secret-hetzner",
             duckdns_token="secret-duck",
+            duckdns_subdomain="lab42",
             s3_endpoint="https://example",
             s3_access_key="access-key",
             s3_secret_key="secret-key",
@@ -72,6 +75,7 @@ class AppConfigIniTests(unittest.TestCase):
             parser.read(config_path, encoding="utf-8")
 
             self.assertEqual("https://example", parser.get("ephetzner", "s3_endpoint"))
+            self.assertEqual("lab42", parser.get("ephetzner", "duckdns_subdomain"))
             self.assertEqual(
                 "secret-hetzner",
                 parser.get("ephetzner.secrets", "hetzner_api_token"),

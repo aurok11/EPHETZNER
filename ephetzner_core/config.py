@@ -18,6 +18,7 @@ class _EnvConfig(BaseModel):
 
     hetzner_api_token: Optional[str] = None
     duckdns_token: Optional[str] = None
+    duckdns_subdomain: Optional[str] = None
     s3_endpoint: Optional[str] = None
     s3_access_key: Optional[str] = None
     s3_secret_key: Optional[str] = None
@@ -29,6 +30,7 @@ class AppConfig:
 
     hetzner_api_token: Optional[str]
     duckdns_token: Optional[str]
+    duckdns_subdomain: Optional[str]
     s3_endpoint: Optional[str]
     s3_access_key: Optional[str]
     s3_secret_key: Optional[str]
@@ -40,6 +42,7 @@ class AppConfig:
             data = _EnvConfig(
                 hetzner_api_token=_get_env("HETZNER_API_TOKEN"),
                 duckdns_token=_get_env("DUCKDNS_TOKEN"),
+                duckdns_subdomain=_get_env("DUCKDNS_SUBDOMAIN"),
                 s3_endpoint=_get_env("S3_ENDPOINT"),
                 s3_access_key=_get_env("S3_ACCESS_KEY"),
                 s3_secret_key=_get_env("S3_SECRET_KEY"),
@@ -154,6 +157,7 @@ SECRETS_SECTION = "ephetzner.secrets"
 _CONFIG_FIELDS = (
     "hetzner_api_token",
     "duckdns_token",
+    "duckdns_subdomain",
     "s3_endpoint",
     "s3_access_key",
     "s3_secret_key",

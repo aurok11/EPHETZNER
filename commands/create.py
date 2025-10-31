@@ -69,10 +69,7 @@ def create(
         typer.secho("Nazwa serwera jest wymagana", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
-    project_id = project or questionary.text(
-        "Podaj projekt Hetzner (pozostaw puste, aby użyć domyślnego)", default=""
-    ).ask()
-    project_id = project_id or "default"
+    project_id = project or None
 
     duckdns_options = _ask_duckdns_options(config)
     cloud_init_options = _ask_cloud_init_options()
@@ -94,10 +91,10 @@ def create(
 
     request = ProvisioningRequest(
         name=server_name,
-        project=project_id,
         server_type=selected_type.identifier,
         image=selected_image.identifier,
-        labels={"Type": "Ephemeral", "Project": project_id},
+        labels=_compose_labels(project_id),
+        project=project_id,
         cloud_init=cloud_init_options.content,
     )
 
@@ -187,10 +184,13 @@ def _ask_duckdns_options(config: AppConfig) -> DuckDNSOptions:
     if not config.duckdns_token:
         return DuckDNSOptions(enabled=False, hostname=None)
 
-    enabled = questionary.confirm("Czy podpiąć DuckDNS?", default=True).ask()
+    default_hostname = config.duckdns_subdomain or ""
+    enabled = questionary.confirm("Czy podpiąć DuckDNS?", default=bool(default_hostname)).ask()
     if not enabled:
         return DuckDNSOptions(enabled=False, hostname=None)
-    hostname = questionary.text("Podaj subdomenę DuckDNS:").ask() or None
+    hostname = questionary.text("Podaj subdomenę DuckDNS:", default=default_hostname).ask()
+    if not hostname:
+        return DuckDNSOptions(enabled=True, hostname=default_hostname or None)
     return DuckDNSOptions(enabled=True, hostname=hostname)
 
 
@@ -224,7 +224,7 @@ def _ask_cloud_init_options() -> CloudInitOptions:
 
 def _build_summary_table(
     name: str,
-    project: str,
+    project: Optional[str],
     server_type: ServerTypeInfo,
     image,
     duckdns: DuckDNSOptions,
@@ -237,7 +237,8 @@ def _build_summary_table(
     table.add_column("Wartość")
 
     table.add_row("Nazwa serwera", name)
-    table.add_row("Projekt", project)
+    project_display = project if project else "Przypisany do tokena API"
+    table.add_row("Projekt", project_display)
     table.add_row(
         "Typ serwera",
         f"{server_type.name} ({server_type.cores} vCPU / {server_type.memory_gb}GB RAM / €{server_type.price_hourly}/h)",
@@ -252,3 +253,12 @@ def _build_summary_table(
         "Brak" if not cloud_init.enabled else f"Tak – {cloud_init.runtime} ({cloud_init.path})",
     )
     return table
+
+
+def _compose_labels(project: Optional[str]) -> dict[str, str]:
+    """Compose default label set for newly provisioned servers."""
+
+    labels = dict(EPHEMERAL_LABEL)
+    if project:
+        labels["Project"] = project
+    return labels

@@ -53,10 +53,10 @@ class ProvisioningRequest:
     """Input parameters required to create an ephemeral workspace."""
 
     name: str
-    project: str
     server_type: str
     image: str
     labels: Mapping[str, str]
+    project: str | None = None
     cloud_init: str | None = None
 
 
