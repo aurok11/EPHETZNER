@@ -4,9 +4,6 @@ CLI tooling for provisioning and managing ephemeral Hetzner Cloud workspaces.
 The CLI wraps provisioning, DuckDNS updates, optional S3 backups and clean-up
 flow in a single interactive experience.
 
-> ℹ️ All high-level assumptions and implementation milestones are tracked in
-> `docs/plan.md`.
-
 ### Prerequisites
 
 - Python 3.13+ (managed with [`uv`](https://github.com/astral-sh/uv))
