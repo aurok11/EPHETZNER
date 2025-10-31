@@ -169,5 +169,4 @@ jobs:
           mapfile -t assets < <(find release-assets -type f -print | sort)
           gh release upload "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
-            --clobber \
             "${assets[@]}"
