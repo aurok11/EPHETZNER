@@ -167,6 +167,7 @@ jobs:
             --notes-file release-assets/CHANGELOG.md
 
           mapfile -t assets < <(find release-assets -type f -print | sort)
-          gh release upload "$VERSION" "${assets[@]}" \
+          gh release upload "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
-            --clobber
+            --clobber \
+            "${assets[@]}"
