@@ -161,7 +161,12 @@ jobs:
           VERSION: ${{ env.VERSION }}
         run: |
           set -e
-          gh release create "$VERSION" --title "$VERSION" --notes-file release-assets/CHANGELOG.md
+          gh release create "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$VERSION" \
+            --notes-file release-assets/CHANGELOG.md
 
           mapfile -t assets < <(find release-assets -type f -print | sort)
-          gh release upload "$VERSION" "${assets[@]}" --clobber
+          gh release upload "$VERSION" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
