@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -21,6 +22,32 @@ from services.base import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_ssh_fingerprint(public_key: str) -> str:
+    """Compute SSH key fingerprint from base64-decoded key material.
+    
+    Args:
+        public_key: SSH public key in OpenSSH format (e.g., "ssh-rsa AAAA... comment")
+    
+    Returns:
+        Short hex fingerprint suitable for key identification (first 12 chars of MD5 hash)
+    """
+    parts = public_key.strip().split()
+    if len(parts) < 2:
+        # Fallback for malformed keys
+        return hashlib.md5(public_key.encode("utf-8")).hexdigest()[:12]
+    
+    key_data = parts[1]
+    try:
+        # Decode the base64 key material
+        decoded = base64.b64decode(key_data)
+        # Calculate MD5 fingerprint of the decoded key material
+        return hashlib.md5(decoded).hexdigest()[:12]
+    except Exception:
+        # Fallback if base64 decoding fails
+        return hashlib.md5(public_key.encode("utf-8")).hexdigest()[:12]
+
 
 _SAMPLE_SERVER_TYPES: tuple[ServerTypeInfo, ...] = (
     ServerTypeInfo("cx21", "cx21", cores=2, memory_gb=4.0, disk_gb=40, price_hourly=0.006),
@@ -299,7 +326,7 @@ class HetznerCloudProvider(CloudProvider):
             if stored and stored.strip() == normalized:
                 return key
 
-        fingerprint = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+        fingerprint = _compute_ssh_fingerprint(normalized)
         key_name = f"ephetzner-{server_name}-{fingerprint}"[:64]
 
         try:
