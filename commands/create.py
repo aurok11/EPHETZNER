@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import textwrap
 from dataclasses import dataclass
@@ -395,8 +397,6 @@ def _validate_public_key(value: str) -> bool:
     2. Key type is one of the supported types
     3. Base64 data is valid
     """
-    import base64
-    
     normalized = (value or "").strip()
     if not normalized:
         return False
@@ -427,7 +427,7 @@ def _validate_public_key(value: str) -> bool:
     # Validate that the key data is valid base64
     try:
         base64.b64decode(key_data, validate=True)
-    except Exception:
+    except (binascii.Error, ValueError):
         return False
     
     return True
