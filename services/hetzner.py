@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -27,6 +28,10 @@ logger = logging.getLogger(__name__)
 def _compute_ssh_fingerprint(public_key: str) -> str:
     """Compute SSH key fingerprint from base64-decoded key material.
     
+    This follows SSH fingerprinting standards by computing the MD5 hash of the
+    decoded public key material. MD5 is used here for compatibility with SSH
+    tooling and key identification, not for cryptographic security.
+    
     Args:
         public_key: SSH public key in OpenSSH format (e.g., "ssh-rsa AAAA... comment")
     
@@ -44,7 +49,7 @@ def _compute_ssh_fingerprint(public_key: str) -> str:
         decoded = base64.b64decode(key_data)
         # Calculate MD5 fingerprint of the decoded key material
         return hashlib.md5(decoded).hexdigest()[:12]
-    except Exception:
+    except (binascii.Error, ValueError):
         # Fallback if base64 decoding fails
         return hashlib.md5(public_key.encode("utf-8")).hexdigest()[:12]
 
