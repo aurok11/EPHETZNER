@@ -28,6 +28,7 @@ __all__ = [
     "_",
     "get_locale",
     "initialize_locale",
+    "is_supported_locale",
     "set_locale",
 ]
 
