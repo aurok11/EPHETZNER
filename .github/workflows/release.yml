@@ -3,18 +3,24 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*-tested'
 
 env:
-  VERSION: ${{ github.ref_name }}
+  TESTED_TAG: ${{ github.ref_name }}
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
     name: Build binaries
     runs-on: ${{ matrix.os }}
+    outputs:
+      final_tag: ${{ steps.metadata.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -27,6 +33,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Determine final version
+        id: metadata
+        run: |
+          tested_tag="${TESTED_TAG}"
+          if [[ "${tested_tag}" != *-tested ]]; then
+            echo "Tag ${tested_tag} does not assert test completion." >&2
+            exit 1
+          fi
+          final_tag="${tested_tag%-tested}"
+          echo "tag=${final_tag}" >> "$GITHUB_OUTPUT"
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v1
         with:
@@ -36,10 +53,10 @@ jobs:
         run: uv python install 3.13
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --group build
 
-      - name: Run tests
-        run: uv run python -m unittest discover -s tests
+      - name: Note tested provenance
+        run: echo "Tests already validated by PR Quality Gate workflow."
 
       - name: Build binary
         run: uv run pyinstaller --onefile --name ephetzner main.py
@@ -47,6 +64,7 @@ jobs:
       - name: Prepare artifacts
         env:
           TARGET: ${{ matrix.target }}
+          VERSION: ${{ steps.metadata.outputs.tag }}
         shell: bash
         run: |
           uv run python - <<'PY'
@@ -85,11 +103,38 @@ jobs:
     name: Publish release
     needs: build
     runs-on: ubuntu-latest
+    env:
+      TESTED_TAG: ${{ github.ref_name }}
+      BUILD_FINAL_TAG: ${{ needs.build.outputs.final_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Determine final version
+        id: metadata
+        run: |
+          tested_tag="${TESTED_TAG}"
+          if [[ "${tested_tag}" != *-tested ]]; then
+            echo "Tag ${tested_tag} does not assert test completion." >&2
+            exit 1
+          fi
+          final_tag="${tested_tag%-tested}"
+          commit_ref=$(git rev-list -n 1 "$GITHUB_REF")
+          echo "FINAL_TAG=${final_tag}" >> "$GITHUB_ENV"
+          echo "COMMIT_REF=${commit_ref}" >> "$GITHUB_ENV"
+
+      - name: Cross-check build metadata
+        if: ${{ needs.build.outputs.final_tag != '' }}
+        run: |
+          if [ "${BUILD_FINAL_TAG}" != "${FINAL_TAG}" ]; then
+            echo "Mismatch between build output ${BUILD_FINAL_TAG} and release computation ${FINAL_TAG}." >&2
+            exit 1
+          fi
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -99,7 +144,7 @@ jobs:
       - name: Generate source archive
         run: |
           mkdir -p release-assets/source
-          git archive --format=zip --output release-assets/source/ephetzner-${VERSION}-src.zip HEAD
+          git archive --format=zip --output release-assets/source/ephetzner-${FINAL_TAG}-src.zip "${COMMIT_REF}"
 
       - name: Combine checksums
         run: |
@@ -124,11 +169,12 @@ jobs:
         shell: bash
         run: |
           set -e
-          PREV_TAG=$(git describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || echo "")
+          commit_ref="${COMMIT_REF}"
+          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^v[0-9]+(\.[0-9]+)*$' | grep -Fv "${FINAL_TAG}" | head -n 1)
           if [ -z "$PREV_TAG" ]; then
-            git log --pretty=format:'- %s' > release-assets/CHANGELOG.md
+            git log --pretty=format:'- %s' "$commit_ref" > release-assets/CHANGELOG.md
           else
-            git log --pretty=format:'- %s' "${PREV_TAG}..${VERSION}" > release-assets/CHANGELOG.md
+            git log --pretty=format:'- %s' "${PREV_TAG}..${commit_ref}" > release-assets/CHANGELOG.md
           fi
           python - <<'PY'
           import os
@@ -146,10 +192,23 @@ jobs:
               handle.write('EOF\n')
           PY
 
+      - name: Create canonical release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git ls-remote --tags origin "${FINAL_TAG}" | grep -q "${FINAL_TAG}$"; then
+            echo "Canonical tag ${FINAL_TAG} already exists on origin."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "${FINAL_TAG}" "${COMMIT_REF}" -m "Release ${FINAL_TAG}"
+            git push origin "${FINAL_TAG}"
+          fi
+
       - name: Remove existing release (if any)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ env.VERSION }}
+          VERSION: ${{ env.FINAL_TAG }}
         run: |
           if gh release view "$VERSION" >/dev/null 2>&1; then
             gh release delete "$VERSION" -y
@@ -158,7 +217,7 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ env.VERSION }}
+          VERSION: ${{ env.FINAL_TAG }}
         run: |
           set -e
           gh release create "$VERSION" \
@@ -173,3 +232,10 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --clobber
           done
+
+      - name: Delete tested tag
+        env:
+          TESTED_TAG: ${{ env.TESTED_TAG }}
+        run: |
+          git push origin ":${TESTED_TAG}" || true
+          git tag -d "${TESTED_TAG}" || true

@@ -20,7 +20,7 @@ The first command run will prompt for any missing tokens. Configuration values
 are resolved from the following sources (highest precedence first):
 
 - Environment variables (`HETZNER_API_TOKEN`, `DUCKDNS_TOKEN`, `S3_ENDPOINT`,
-	`S3_ACCESS_KEY`, `S3_SECRET_KEY`)
+	`S3_ACCESS_KEY`, `S3_SECRET_KEY`, `EPHETZNER_SSH_PUBLIC_KEY`)
 - `~/.config/ephetzner/config.ini` (or the path supplied via
 	`EPHETZNER_CONFIG_PATH`). When running the packaged PyInstaller binary the
 	default shifts to `./ephetzner.ini` alongside the executable.
@@ -37,6 +37,7 @@ Example `~/.config/ephetzner/config.ini`:
 ```ini
 [ephetzner]
 s3_endpoint = https://objects.example
+ssh_public_key = ssh-ed25519 AAAAexample
 
 [ephetzner.secrets]
 hetzner_api_token = <token>
@@ -44,6 +45,10 @@ duckdns_token = <token>
 s3_access_key = <key>
 s3_secret_key = <secret>
 ```
+
+The `ssh_public_key` entry should be the literal line you would copy into
+`authorized_keys`. During provisioning the CLI injects this key for the `root`
+account via `cloud-init`; the matching private key remains on your workstation.
 
 Generate a commented template (defaults to the active config path):
 
@@ -79,6 +84,26 @@ following environment variables:
 - `EPHETZNER_SSH_USER`
 - `EPHETZNER_SSH_KEY_PATH`
 - `EPHETZNER_SSH_PASSWORD`
+- `EPHETZNER_SSH_PUBLIC_KEY`
+
+When a public key is present in the application configuration (or provided via
+`EPHETZNER_SSH_PUBLIC_KEY`) the create flow ensures it is appended to
+`/root/.ssh/authorized_keys` on freshly provisioned hosts.
+
+### Localization
+
+At startup the CLI attempts to determine the UI language:
+
+- **Linux / POSIX**: reads `LC_ALL`, `LC_MESSAGES` or `LANG`; falls back to
+	`locale.getdefaultlocale()`.
+- **Windows**: queries `GetUserDefaultLocaleName` via the Win32 API.
+
+If the detected locale starts with `pl`, Polish strings are displayed. Any
+other locale results in English output. When the system APIs are unavailable or
+return nothing, the CLI prompts for a language. You can override detection by
+setting `EPHETZNER_LANG` to `pl` or `en`.
+
+Currently the CLI ships with two language packs: English (default) and Polish.
 
 ### Packaging
 

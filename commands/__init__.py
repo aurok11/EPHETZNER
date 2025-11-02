@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import typer
 
-from . import create, delete, configure
-
 
 def register(app: typer.Typer) -> None:
 	"""Register all CLI commands on the provided Typer application."""
+
+	from . import configure, create, delete
 
 	create.register(app)
 	delete.register(app)
