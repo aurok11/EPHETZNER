@@ -33,6 +33,9 @@ __all__ = [
 
 _SUPPORTED_LOCALES = {"en", "pl"}
 
+def is_supported_locale(locale: str) -> bool:
+    """Check if the given locale is supported."""
+    return locale in _SUPPORTED_LOCALES
 _CURRENT_LOCALE: Optional[str] = None
 
 _TRANSLATIONS: Dict[str, Dict[str, str]] = {
