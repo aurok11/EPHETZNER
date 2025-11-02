@@ -389,9 +389,9 @@ def _ssh_hint(public_key: str) -> str:
     return (public_key.strip()[:12] + "…") if len(public_key.strip()) > 12 else public_key.strip()
 
 
-def _validate_public_key(value: str) -> bool:
+def _validate_public_key(value: Optional[str]) -> bool:
     """Validate SSH public key format and content.
-    
+
     Checks that:
     1. Key has the expected structure (type + base64 data [+ optional comment])
     2. Key type is one of the supported types
