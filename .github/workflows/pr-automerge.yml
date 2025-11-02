@@ -1,0 +1,134 @@
+name: PR Quality Gate
+
+on:
+  pull_request_target:
+    types:
+      - labeled
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-quality-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-merge:
+    if: >-
+      github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'automerge')
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
+    steps:
+      - name: Checkout pull request HEAD
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.PR_HEAD_REPO }}
+          ref: ${{ env.PR_HEAD_REF }}
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: latest
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run unit tests with coverage
+        run: |
+          uv run coverage run --rcfile=.coveragerc -m unittest discover -s tests
+          uv run coverage report --rcfile=.coveragerc --fail-under=75
+
+      - name: Determine and apply version bump
+        id: bump
+        run: |
+          version=$(python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          labels = {label['name'] for label in json.loads(os.environ['PR_LABELS'])}
+          if 'version:major' in labels:
+              bump = 'major'
+          elif 'version:patch' in labels:
+              bump = 'patch'
+          else:
+              bump = 'minor'
+
+          path = Path('pyproject.toml')
+          text = path.read_text(encoding='utf-8')
+          match = re.search(r'(?m)^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"', text)
+          if not match:
+              raise SystemExit('Could not locate version field in pyproject.toml')
+          major, minor, patch = map(int, match.groups())
+
+          if bump == 'major':
+              major += 1
+              minor = 0
+              patch = 0
+          elif bump == 'minor':
+              minor += 1
+              patch = 0
+          else:
+              patch += 1
+
+          new_version = f"{major}.{minor}.{patch}"
+          new_text = re.sub(
+              r'(?m)^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"',
+              f'version = "{new_version}"',
+              text,
+              count=1,
+          )
+          path.write_text(new_text, encoding='utf-8')
+
+          print(new_version)
+          PY
+          )
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.version }}"
+          git push origin HEAD:${PR_HEAD_REF}
+
+      - name: Merge pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${PR_NUMBER} \
+            --merge \
+            --repo "$GITHUB_REPOSITORY" \
+            --delete-branch
+
+      - name: Create and push tested release tag
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git fetch origin ${BASE_REF}
+          commit_ref=$(git rev-parse origin/${BASE_REF})
+          tag_name="v${VERSION}-tested"
+          if git ls-remote --tags origin "${tag_name}" | grep -q "${tag_name}$"; then
+            echo "Tag ${tag_name} already exists on origin; skipping creation."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "${tag_name}" "$commit_ref" -m "Release ${tag_name}"
+            git push origin "${tag_name}"
+          fi

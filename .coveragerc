@@ -1,0 +1,11 @@
+[run]
+branch = True
+omit =
+    commands/create.py
+    ephetzner_core/localization.py
+    hcloud/*
+    ui/menus.py
+    ui/formatters.py
+
+[report]
+show_missing = True

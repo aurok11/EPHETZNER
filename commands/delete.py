@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ephetzner_core import AppConfig, resolve_config
+from ephetzner_core.localization import _
 from services.base import BackupProvider, CloudProvider, BackupRequest, BackupResult, ServerInstance
 from services.providers import build_backup_provider, build_cloud_provider
 
@@ -48,32 +49,40 @@ def delete(
     backup_opts = _collect_backup_preferences(config, skip_backup)
 
     summary_table = _build_summary(server, backup_opts)
-    console.print(Panel(summary_table, title="Potwierdzenie usunięcia"))
+    console.print(Panel(summary_table, title=_("Deletion confirmation")))
 
-    if not questionary.confirm("Czy kontynuować?", default=True).ask():
-        typer.secho("Operacja anulowana", fg=typer.colors.YELLOW)
+    if not questionary.confirm(_("Continue?"), default=True).ask():
+        typer.secho(_("Operation cancelled"), fg=typer.colors.YELLOW)
         raise typer.Exit(code=1)
 
     if backup_opts.enabled:
         backup_provider = build_backup_provider(config)
         backup_success, _ = _perform_backup(backup_provider, server, backup_opts, console)
         if not backup_success:
-            typer.secho("Backup zakończył się niepowodzeniem", fg=typer.colors.RED)
+            typer.secho(_("Backup failed"), fg=typer.colors.RED)
             raise typer.Exit(code=1)
 
     try:
         provider.delete_server(server.identifier)
     except NotImplementedError:
         typer.secho(
-            "Usuwanie serwerów nie zostało jeszcze zaimplementowane.",
+            _("Server deletion is not implemented yet."),
             fg=typer.colors.YELLOW,
         )
         raise typer.Exit(code=1)
     except Exception as exc:  # pragma: no cover - defensive guard
-        typer.secho(f"Błąd usuwania serwera: {exc}", fg=typer.colors.RED)
+        typer.secho(
+            _("Server deletion failed: {error}").format(error=exc),
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1)
 
-    console.print(f"[green]Serwer {server.name} ({server.identifier}) został usunięty.[/green]")
+    console.print(
+        _("[green]Server {name} ({identifier}) deleted successfully.[/green]").format(
+            name=server.name,
+            identifier=server.identifier,
+        )
+    )
 
 
 def _select_server(provider: CloudProvider, server_id: Optional[str]) -> ServerInstance:
@@ -83,36 +92,42 @@ def _select_server(provider: CloudProvider, server_id: Optional[str]) -> ServerI
         servers = provider.list_servers(labels=EPHEMERAL_LABEL)
     except NotImplementedError:
         typer.secho(
-            "Listing serwerów nie zostało jeszcze zaimplementowane.",
+            _("Server listing is not implemented yet."),
             fg=typer.colors.YELLOW,
         )
         raise typer.Exit(code=1)
     except Exception as exc:  # pragma: no cover - defensive guard
-        typer.secho(f"Błąd pobierania listy serwerów: {exc}", fg=typer.colors.RED)
+        typer.secho(
+            _("Failed to fetch server list: {error}").format(error=exc),
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1)
     if not servers:
-        typer.secho("Brak serwerów oznaczonych jako Ephemeral", fg=typer.colors.YELLOW)
+        typer.secho(_("No servers labeled as Ephemeral"), fg=typer.colors.YELLOW)
         raise typer.Exit(code=1)
 
     if server_id:
         for server in servers:
             if server.identifier == server_id:
                 return server
-        typer.secho(f"Nie znaleziono serwera {server_id}", fg=typer.colors.RED)
+        typer.secho(
+            _("Server {identifier} not found").format(identifier=server_id),
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1)
 
     choice = questionary.select(
-        "Wybierz serwer do usunięcia",
+        _("Select server to delete"),
         choices=[
             questionary.Choice(
-                title=f"{srv.name} ({srv.server_type}) – {srv.ipv4 or 'brak IP'}",
+                title=f"{srv.name} ({srv.server_type}) – {srv.ipv4 or _('no IPv4')}",
                 value=srv,
             )
             for srv in servers
         ],
     ).ask()
     if choice is None:
-        typer.secho("Nie wybrano serwera", fg=typer.colors.YELLOW)
+        typer.secho(_("No server selected"), fg=typer.colors.YELLOW)
         raise typer.Exit(code=1)
     return choice
 
@@ -124,16 +139,23 @@ def _collect_backup_preferences(config: AppConfig, skip_backup: bool) -> BackupO
         return BackupOptions(enabled=False, remote_path=None, destination_prefix=None)
 
     if not (config.s3_access_key and config.s3_secret_key):
-        typer.secho("Brak pełnej konfiguracji S3 – pomijam backup.", fg=typer.colors.YELLOW)
+        typer.secho(
+            _("S3 configuration incomplete – skipping backup."),
+            fg=typer.colors.YELLOW,
+        )
         return BackupOptions(enabled=False, remote_path=None, destination_prefix=None)
 
-    enabled_answer = questionary.confirm("Czy wykonać backup do S3?", default=True).ask()
+    enabled_answer = questionary.confirm(_("Perform S3 backup?"), default=True).ask()
     if not enabled_answer:
         return BackupOptions(enabled=False, remote_path=None, destination_prefix=None)
 
-    remote_path = questionary.text("Podaj ścieżkę do backupu na serwerze", default="/var/backups").ask()
+    remote_path = questionary.text(
+        _("Provide remote backup path"),
+        default="/var/backups",
+    ).ask()
     destination = questionary.text(
-        "Podaj prefix docelowy w S3 (np. s3://bucket/path)", default=""
+        _("Provide S3 destination prefix (e.g. s3://bucket/path)"),
+        default="",
     ).ask()
     return BackupOptions(
         enabled=True,
@@ -153,15 +175,17 @@ def _build_summary(server: ServerInstance, backup: BackupOptions) -> Table:
     hours = round(age.total_seconds() / 3600, 2)
 
     table = Table(show_header=False)
-    table.add_column("Klucz", style="bold")
-    table.add_column("Wartość")
-    table.add_row("Serwer", f"{server.name} ({server.identifier})")
-    table.add_row("Typ", server.server_type)
-    table.add_row("Adres IP", server.ipv4 or "brak")
-    table.add_row("Czas działania", f"~{hours} h")
+    table.add_column(_("Field"), style="bold")
+    table.add_column(_("Value"))
+    table.add_row(_("Server"), f"{server.name} ({server.identifier})")
+    table.add_row(_("Type"), server.server_type)
+    table.add_row(_("IPv4 address"), server.ipv4 or _("none"))
+    table.add_row(_("Uptime"), f"~{hours} h")
     table.add_row(
-        "Backup",
-        "Brak" if not backup.enabled else f"{backup.remote_path} -> {backup.destination_prefix}",
+        _("Backup"),
+        _("None")
+        if not backup.enabled
+        else f"{backup.remote_path} -> {backup.destination_prefix}",
     )
     return table
 
@@ -179,7 +203,7 @@ def _perform_backup(
     command should abort.
     """
 
-    console.print("[blue]Rozpoczynam backup danych...[/blue]")
+    console.print(_("[blue]Starting backup...[/blue]"))
     request = BackupRequest(
         server=server,
         remote_path=backup.remote_path or "/",
@@ -189,13 +213,19 @@ def _perform_backup(
     try:
         result = backup_provider.create_backup(request)
         if not backup_provider.verify_backup(result):
-            console.print("[red]Weryfikacja backupu nie powiodła się[/red]")
+            console.print(_("[red]Backup verification failed[/red]"))
             return False, None
-        console.print(f"[green]Backup ukończony: {result.location}[/green]")
+        console.print(
+            _("[green]Backup finished: {location}[/green]").format(
+                location=result.location,
+            )
+        )
         return True, result
     except NotImplementedError:
-        console.print("[yellow]Funkcja backupu nie jest jeszcze dostępna.[/yellow]")
+        console.print(_("[yellow]Backup functionality is not available yet.[/yellow]"))
         return True, None
     except Exception as exc:  # pragma: no cover - defensive guard
-        console.print(f"[red]Błąd podczas backupu: {exc}[/red]")
+        console.print(
+            _("[red]Backup error: {error}[/red]").format(error=exc)
+        )
         return False, None

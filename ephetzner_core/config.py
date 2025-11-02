@@ -12,6 +12,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ValidationError
 
+from .localization import _
 
 class _EnvConfig(BaseModel):
     """Validation schema for environment-provided configuration values."""
@@ -22,6 +23,7 @@ class _EnvConfig(BaseModel):
     s3_endpoint: Optional[str] = None
     s3_access_key: Optional[str] = None
     s3_secret_key: Optional[str] = None
+    ssh_public_key: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -34,6 +36,7 @@ class AppConfig:
     s3_endpoint: Optional[str]
     s3_access_key: Optional[str]
     s3_secret_key: Optional[str]
+    ssh_public_key: Optional[str] = None
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -46,6 +49,7 @@ class AppConfig:
                 s3_endpoint=_get_env("S3_ENDPOINT"),
                 s3_access_key=_get_env("S3_ACCESS_KEY"),
                 s3_secret_key=_get_env("S3_SECRET_KEY"),
+                ssh_public_key=_get_env("EPHETZNER_SSH_PUBLIC_KEY"),
             )
         except ValidationError as exc:  # pragma: no cover - defensive guard
             raise RuntimeError("Failed to validate environment configuration") from exc
@@ -161,6 +165,7 @@ _CONFIG_FIELDS = (
     "s3_endpoint",
     "s3_access_key",
     "s3_secret_key",
+    "ssh_public_key",
 )
 _SENSITIVE_FIELDS = {
     "hetzner_api_token",
@@ -191,9 +196,9 @@ def _maybe_persist_config(config: AppConfig, path: Path) -> None:
     except ModuleNotFoundError:  # pragma: no cover - defensive guard
         return
 
-    message = (
-        f"Zapisać konfigurację (wraz z danymi wrażliwymi) do pliku {path}?"
-    )
+    message = _(
+        "Save configuration (including sensitive data) to {path}?"
+    ).format(path=path)
     should_save = confirm(message, default=False).ask()
     if not should_save:
         return
@@ -201,7 +206,7 @@ def _maybe_persist_config(config: AppConfig, path: Path) -> None:
     try:
         save_config_to_ini(config, path)
     except Exception as exc:  # pragma: no cover - defensive guard
-        print(f"[WARN] Nie udało się zapisać konfiguracji: {exc}")
+        print(_("[WARN] Failed to save configuration: {error}").format(error=exc))
 
 
 

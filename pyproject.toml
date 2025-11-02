@@ -1,6 +1,6 @@
 [project]
 name = "ephetzner"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -19,9 +19,13 @@ dependencies = [
 ephetzner = "main:app"
 
 [dependency-groups]
+build = [
+    "pyinstaller>=6.11.0",
+]
 dev = [
     "black>=25.9.0",
     "ipython>=9.6.0",
     "ruff>=0.14.2",
+    "coverage>=7.6.0",
     "pyinstaller>=6.11.0",
 ]

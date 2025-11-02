@@ -19,6 +19,7 @@ class AppConfigIniTests(unittest.TestCase):
                     [ephetzner]
                     s3_endpoint = https://objects.example
                     duckdns_subdomain = lab42
+                    ssh_public_key = ssh-ed25519 AAAAexamplekey
 
                     [ephetzner.secrets]
                     hetzner_api_token = hetzner-secret
@@ -37,6 +38,7 @@ class AppConfigIniTests(unittest.TestCase):
             self.assertEqual("https://objects.example", config.s3_endpoint)
             self.assertIsNone(config.s3_access_key)
             self.assertIsNone(config.s3_secret_key)
+            self.assertEqual("ssh-ed25519 AAAAexamplekey", config.ssh_public_key)
 
     def test_env_variables_override_ini_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -52,10 +54,18 @@ class AppConfigIniTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch.dict(os.environ, {"HETZNER_API_TOKEN": "env-token"}, clear=False):
+            with patch.dict(
+                os.environ,
+                {
+                    "HETZNER_API_TOKEN": "env-token",
+                    "EPHETZNER_SSH_PUBLIC_KEY": "ssh-ed25519 ENVKEY",
+                },
+                clear=False,
+            ):
                 config = AppConfig.from_sources(ini_path=config_path)
 
             self.assertEqual("env-token", config.hetzner_api_token)
+            self.assertEqual("ssh-ed25519 ENVKEY", config.ssh_public_key)
 
     def test_save_config_to_ini_writes_sections(self) -> None:
         config = AppConfig(
@@ -65,6 +75,7 @@ class AppConfigIniTests(unittest.TestCase):
             s3_endpoint="https://example",
             s3_access_key="access-key",
             s3_secret_key="secret-key",
+            ssh_public_key="ssh-ed25519 AAAATestKey",
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -81,6 +92,7 @@ class AppConfigIniTests(unittest.TestCase):
                 parser.get("ephetzner.secrets", "hetzner_api_token"),
             )
             self.assertEqual("access-key", parser.get("ephetzner.secrets", "s3_access_key"))
+            self.assertEqual("ssh-ed25519 AAAATestKey", parser.get("ephetzner", "ssh_public_key"))
 
             if os.name == "posix":
                 mode = os.stat(config_path).st_mode & 0o777

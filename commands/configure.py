@@ -9,11 +9,13 @@ from typing import Optional
 import typer
 
 from ephetzner_core import resolve_config_path
+from ephetzner_core.localization import _
 
-app = typer.Typer(help="Manage ephetzner configuration files")
+app = typer.Typer()
 
 _TEMPLATE = """[ephetzner]
 # s3_endpoint = https://objects.example
+# ssh_public_key = ssh-ed25519 AAAA...
 
 [ephetzner.secrets]
 # hetzner_api_token =
@@ -26,6 +28,7 @@ _TEMPLATE = """[ephetzner]
 def register(app_root: typer.Typer) -> None:
     """Attach configuration-related subcommands to the CLI."""
 
+    app.help = _("Manage ephetzner configuration files")
     app_root.add_typer(app, name="config")
 
 
@@ -38,7 +41,10 @@ def init_config(
 
     destination = (path or resolve_config_path()).expanduser()
     if destination.exists() and not overwrite:
-        typer.secho(f"Plik konfiguracji już istnieje: {destination}", fg=typer.colors.YELLOW)
+        typer.secho(
+            _("Configuration file already exists: {path}").format(path=destination),
+            fg=typer.colors.YELLOW,
+        )
         raise typer.Exit(code=1)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -49,4 +55,7 @@ def init_config(
     except (PermissionError, NotImplementedError):  # pragma: no cover - platform specific
         pass
 
-    typer.secho(f"Szablon zapisany do {destination}", fg=typer.colors.GREEN)
+    typer.secho(
+        _("Template saved to {path}").format(path=destination),
+        fg=typer.colors.GREEN,
+    )

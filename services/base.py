@@ -58,6 +58,17 @@ class ProvisioningRequest:
     labels: Mapping[str, str]
     project: str | None = None
     cloud_init: str | None = None
+    ssh_public_key: str | None = None
+
+
+@dataclass(slots=True)
+class SSHKeyInfo:
+    """Summarises an SSH key registered with the infrastructure provider."""
+
+    identifier: str
+    name: str
+    fingerprint: str | None
+    public_key: str | None
 
 
 @dataclass(slots=True)
@@ -93,6 +104,10 @@ class CloudProvider(ABC):
     @abstractmethod
     def list_servers(self, *, labels: Mapping[str, str] | None = None) -> Sequence[ServerInstance]:
         """Return servers matching optional label selector."""
+
+    @abstractmethod
+    def list_ssh_keys(self) -> Sequence[SSHKeyInfo]:
+        """Return SSH keys available to attach during provisioning."""
 
     @abstractmethod
     def create_server(self, request: ProvisioningRequest) -> ServerInstance:

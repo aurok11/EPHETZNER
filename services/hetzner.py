@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
@@ -13,12 +16,43 @@ from services.base import (
     CloudProvider,
     ImageInfo,
     ProvisioningRequest,
+    SSHKeyInfo,
     ServerInstance,
     ServerTypeInfo,
 )
 
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_ssh_fingerprint(public_key: str) -> str:
+    """Compute a short identifier for an SSH key from base64-decoded key material.
+    
+    This returns the first 12 characters of the MD5 hash of the decoded public key material.
+    The result is a shortened identifier for internal use and is not a standard SSH fingerprint.
+    Do not use for cryptographic security or interoperability with SSH tooling expecting standard fingerprints.
+    
+    Args:
+        public_key: SSH public key in OpenSSH format (e.g., "ssh-rsa AAAA... comment")
+    
+    Returns:
+        Short hex fingerprint suitable for key identification (first 12 chars of MD5 hash)
+    """
+    parts = public_key.strip().split()
+    if len(parts) < 2:
+        # Fallback for malformed keys
+        return hashlib.md5(public_key.encode("utf-8")).hexdigest()[:12]
+    
+    key_data = parts[1]
+    try:
+        # Decode the base64 key material
+        decoded = base64.b64decode(key_data)
+        # Calculate MD5 fingerprint of the decoded key material
+        return hashlib.md5(decoded).hexdigest()[:12]
+    except (binascii.Error, ValueError):
+        # Fallback if base64 decoding fails
+        return hashlib.md5(public_key.encode("utf-8")).hexdigest()[:12]
+
 
 _SAMPLE_SERVER_TYPES: tuple[ServerTypeInfo, ...] = (
     ServerTypeInfo("cx21", "cx21", cores=2, memory_gb=4.0, disk_gb=40, price_hourly=0.006),
@@ -178,18 +212,53 @@ class HetznerCloudProvider(CloudProvider):
             )
         return result
 
+    def list_ssh_keys(self) -> Sequence[SSHKeyInfo]:
+        logger.debug("Listing SSH keys from Hetzner")
+        client = self._client
+        key_api = getattr(client, "ssh_keys", None) if client else None
+        if key_api is None:
+            return []
+        try:
+            keys = key_api.get_all()
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.warning("Failed to list Hetzner SSH keys", exc_info=exc)
+            return []
+
+        result: list[SSHKeyInfo] = []
+        for key in keys:
+            fingerprint = getattr(key, "fingerprint", None)
+            result.append(
+                SSHKeyInfo(
+                    identifier=str(getattr(key, "id", getattr(key, "name", "unknown"))),
+                    name=getattr(key, "name", "unknown"),
+                    fingerprint=str(fingerprint) if fingerprint else None,
+                    public_key=getattr(key, "public_key", None),
+                )
+            )
+        return result
+
     def create_server(self, request: ProvisioningRequest) -> ServerInstance:
         logger.info("Creating server via Hetzner", extra={"request": request})
         client = self._require_client()
         labels = dict(request.labels)
+        ssh_keys_param = None
+        attempted_key_registration = bool(request.ssh_public_key and request.ssh_public_key.strip())
+        if attempted_key_registration:
+            ssh_key = self._ensure_ssh_key(request.ssh_public_key, request.name)
+            if ssh_key is not None:
+                ssh_keys_param = [ssh_key]
+        create_kwargs = {
+            "name": request.name,
+            "server_type": request.server_type,
+            "image": request.image,
+            "labels": labels,
+            "user_data": request.cloud_init,
+        }
+        if ssh_keys_param is not None:
+            create_kwargs["ssh_keys"] = ssh_keys_param
+
         try:
-            response = client.servers.create(
-                name=request.name,
-                server_type=request.server_type,
-                image=request.image,
-                labels=labels,
-                user_data=request.cloud_init,
-            )
+            response = client.servers.create(**create_kwargs)
             server = getattr(response, "server", None)
             if server is None:
                 raise RuntimeError("Hetzner did not return server details")
@@ -200,6 +269,12 @@ class HetznerCloudProvider(CloudProvider):
         except Exception as exc:  # pragma: no cover - defensive catch
             logger.exception("Unexpected error during server creation")
             raise RuntimeError("Failed to create server") from exc
+        finally:
+            if attempted_key_registration and ssh_keys_param is None:
+                logger.warning(
+                    "SSH public key could not be registered with Hetzner API",
+                    extra={"server": request.name},
+                )
 
     def assign_labels(self, server_id: str, labels: Mapping[str, str]) -> None:
         logger.debug("Assigning labels", extra={"server_id": server_id, "labels": labels})
@@ -231,6 +306,58 @@ class HetznerCloudProvider(CloudProvider):
         logger.debug("Fetching server metadata", extra={"server_id": server_id})
         server = self._get_server_resource(server_id)
         return self._convert_server(server)
+
+    def _ensure_ssh_key(self, public_key: str, server_name: str) -> Any | None:
+        """Ensure the supplied public key exists in Hetzner and return its handle."""
+
+        client = self._require_client()
+        normalized = public_key.strip()
+        if not normalized:
+            return None
+
+        key_api = getattr(client, "ssh_keys", None)
+        if key_api is None:
+            logger.warning("Hetzner client does not expose SSH key API")
+            return None
+
+        try:
+            keys = key_api.get_all()
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.warning("Failed to list Hetzner SSH keys", exc_info=exc)
+            keys = []
+
+        for key in keys:
+            stored = getattr(key, "public_key", None)
+            if stored and stored.strip() == normalized:
+                return key
+
+        fingerprint = _compute_ssh_fingerprint(normalized)
+        key_name = f"ephetzner-{server_name}-{fingerprint}"[:64]
+
+        try:
+            creation = key_api.create(name=key_name, public_key=normalized)
+        except APIException as exc:
+            logger.error("Hetzner API error during SSH key registration", exc_info=exc)
+            message = (exc.message or "").lower()
+            if "already exists" in message:
+                try:
+                    existing = key_api.get_by_name(key_name)
+                except Exception:  # pragma: no cover - defensive fallback
+                    existing = None
+                if existing:
+                    return existing
+                for key in keys:
+                    stored = getattr(key, "public_key", None)
+                    if stored and stored.strip() == normalized:
+                        return key
+                return None
+            raise RuntimeError(f"Failed to register SSH key: {exc.message}") from exc
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.warning("Unexpected error registering SSH key", exc_info=exc)
+            return None
+
+        ssh_key = getattr(creation, "ssh_key", None)
+        return ssh_key or creation
 
     def _get_server_resource(self, server_id: str) -> Any:
         client = self._require_client()

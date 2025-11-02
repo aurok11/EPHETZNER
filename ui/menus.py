@@ -9,10 +9,11 @@ import questionary
 from rich.console import Console
 
 from ephetzner_core import AppConfig, with_overrides
+from ephetzner_core.localization import _
 from ui.formatters import config_summary_table
 
 _PROMPT_LOOP_NOTE = (
-    "Wprowadź wymagane dane. Możesz pozostawić wartość pustą, aby pominąć/pozostawić bez zmian."
+    "Provide required values. Leave blank to skip or keep the current value."
 )
 
 
@@ -28,18 +29,26 @@ class _ConfigField:
     def message(self, current_value: Optional[str]) -> str:
         """Build a prompt message including optionality hints."""
 
-        suffix = " (opcjonalne)" if self.optional else ""
+        label_text = _(self.label)
+        suffix = _(" (optional)") if self.optional else ""
         if self.secret and current_value:
-            return f"{self.label}{suffix} – pozostaw puste, by zachować obecną wartość"
+            template = _("{label}{suffix} – leave blank to keep existing value")
+            return template.format(label=label_text, suffix=suffix)
         if current_value:
-            return f"{self.label}{suffix} (obecnie: {self._short_value_hint(current_value)})"
-        return f"{self.label}{suffix}"
+            template = _("{label}{suffix} (current: {value})")
+            return template.format(
+                label=label_text,
+                suffix=suffix,
+                value=self._short_value_hint(current_value),
+            )
+        template = _("{label}{suffix}")
+        return template.format(label=label_text, suffix=suffix)
 
     def _short_value_hint(self, value: str) -> str:
         """Return hint used when displaying a non-secret existing value."""
 
         if self.secret:
-            return "ustawione"
+            return _("set")
         if len(value) <= 12:
             return value
         return f"{value[:12]}…"
@@ -48,10 +57,11 @@ class _ConfigField:
 _FIELDS: tuple[_ConfigField, ...] = (
     _ConfigField("hetzner_api_token", "Hetzner API token", secret=True, optional=False),
     _ConfigField("duckdns_token", "DuckDNS token", secret=True),
-    _ConfigField("duckdns_subdomain", "Domyślna subdomena DuckDNS", secret=False),
+    _ConfigField("duckdns_subdomain", "DuckDNS default subdomain", secret=False),
     _ConfigField("s3_endpoint", "S3 endpoint URL", secret=False),
     _ConfigField("s3_access_key", "S3 access key", secret=True),
     _ConfigField("s3_secret_key", "S3 secret key", secret=True),
+    _ConfigField("ssh_public_key", "Authorized SSH public key", secret=False),
 )
 
 
@@ -59,8 +69,8 @@ def prompt_app_config(config: AppConfig, console: Optional[Console] = None) -> A
     """Prompt user for configuration values, returning an updated config object."""
 
     console = console or Console()
-    console.print("[bold]Konfiguracja ephetzner[/bold]")
-    console.print(_PROMPT_LOOP_NOTE)
+    console.print(_("[bold]ephetzner configuration[/bold]"))
+    console.print(_(_PROMPT_LOOP_NOTE))
 
     current = config
     while True:
@@ -71,12 +81,12 @@ def prompt_app_config(config: AppConfig, console: Optional[Console] = None) -> A
         updated = with_overrides(current, **overrides)
         console.print(config_summary_table(updated))
         confirmed = questionary.confirm(
-            "Czy zaakceptować powyższą konfigurację?",
+            _("Accept the configuration above?"),
             default=True,
         ).ask()
         if confirmed:
             return updated
-        console.print("[yellow]Edytujemy konfigurację ponownie...[/yellow]")
+        console.print(_("[yellow]Reopening configuration prompts...[/yellow]"))
         current = updated
 
 
