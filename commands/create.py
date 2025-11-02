@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import textwrap
 from dataclasses import dataclass
@@ -387,12 +389,48 @@ def _ssh_hint(public_key: str) -> str:
     return (public_key.strip()[:12] + "…") if len(public_key.strip()) > 12 else public_key.strip()
 
 
-def _validate_public_key(value: str) -> bool:
+def _validate_public_key(value: Optional[str]) -> bool:
+    """Validate SSH public key format and content.
+
+    Checks that:
+    1. Key has the expected structure (type + base64 data [+ optional comment])
+    2. Key type is one of the supported types
+    3. Base64 data is valid
+    """
     normalized = (value or "").strip()
     if not normalized:
         return False
+    
     parts = normalized.split()
-    return len(parts) >= 2
+    if len(parts) < 2:
+        return False
+    
+    # Valid SSH key types
+    valid_key_types = {
+        'ssh-rsa',
+        'ssh-dss',
+        'ssh-ed25519',
+        'ecdsa-sha2-nistp256',
+        'ecdsa-sha2-nistp384',
+        'ecdsa-sha2-nistp521',
+        'sk-ecdsa-sha2-nistp256@openssh.com',
+        'sk-ssh-ed25519@openssh.com',
+    }
+    
+    key_type = parts[0]
+    key_data = parts[1]
+    
+    # Check if key type is valid
+    if key_type not in valid_key_types:
+        return False
+    
+    # Validate that the key data is valid base64
+    try:
+        base64.b64decode(key_data, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    
+    return True
 
 
 def _build_summary_table(
