@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 def _compute_ssh_fingerprint(public_key: str) -> str:
-    """Compute SSH key fingerprint from base64-decoded key material.
+    """Compute a short identifier for an SSH key from base64-decoded key material.
     
-    This follows SSH fingerprinting standards by computing the MD5 hash of the
-    decoded public key material. MD5 is used here for compatibility with SSH
-    tooling and key identification, not for cryptographic security.
+    This returns the first 12 characters of the MD5 hash of the decoded public key material.
+    The result is a shortened identifier for internal use and is not a standard SSH fingerprint.
+    Do not use for cryptographic security or interoperability with SSH tooling expecting standard fingerprints.
     
     Args:
         public_key: SSH public key in OpenSSH format (e.g., "ssh-rsa AAAA... comment")
