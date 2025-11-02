@@ -56,7 +56,7 @@ def _compose_user_data(cloud_init: CloudInitOptions, ssh_public_key: Optional[st
             f"""
             mkdir -p /root/.ssh
             chmod 700 /root/.ssh
-            cat <<'EOF' >/root/.ssh/authorized_keys
+            cat <<'EOF' >>/root/.ssh/authorized_keys
             {key}
             EOF
             chmod 600 /root/.ssh/authorized_keys
