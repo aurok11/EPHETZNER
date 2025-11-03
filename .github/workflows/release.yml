@@ -18,6 +18,9 @@ concurrency:
 jobs:
   build:
     name: Build binaries
+    defaults:
+      run:
+        shell: bash
     runs-on: ${{ matrix.os }}
     outputs:
       final_tag: ${{ steps.metadata.outputs.tag }}
